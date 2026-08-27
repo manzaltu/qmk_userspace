@@ -20,7 +20,15 @@ git clone git@github.com:manzaltu/qmk_userspace.git
 cd qmk_userspace
 qmk config user.overlay_dir="$(realpath .)"
 #+end_src
-*** Compile firmware for both halves
+*** Build and flash with the helper script
+#+begin_src shell
+./build.sh          # build both halves, then flash right and left (prompts for each)
+./build.sh build    # build only
+./build.sh flash    # flash only (right, then left); or: ./build.sh flash left|right
+#+end_src
+The flash step waits for the =RPI-RP2= bootloader drive, mounts it with =udisksctl= and copies the
+matching =.uf2=.
+*** Or compile manually
 #+begin_src shell
 qmk userspace-compile
 #+end_src
