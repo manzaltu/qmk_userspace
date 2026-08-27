@@ -1,0 +1,57 @@
+* Emacs Elora Keymap
+An Emacs-optimized keymap for the splitkb Halcyon Elora rev2, with the Halcyon TFT display module on
+the left half and the Halcyon Cirque trackpad module on the right half.
+
+The layers live in =keymap.json=, a [[https://config.qmk.fm][QMK Configurator]] export that can be imported back into
+the configurator. The tap dance and macro logic lives in =keymap.c= and =keymap.h=; QMK includes both
+into the keymap it generates from the JSON.
+
+This repository is a QMK [[https://docs.qmk.fm/newbs_external_userspace][external userspace]], forked from
+[[https://github.com/splitkb/qmk_userspace][splitkb/qmk_userspace]] (branch =halcyon-qmk=), which provides the Halcyon module code in
+=users/halcyon_modules=.
+
+** Requirements
+*** Follow the QMK tutorial [[https://docs.qmk.fm/#/newbs][here]]
+
+** Installation
+*** Clone this repo and register it as your QMK userspace
+#+begin_src shell
+git clone git@github.com:manzaltu/qmk_userspace.git
+cd qmk_userspace
+qmk config user.overlay_dir="$(realpath .)"
+#+end_src
+*** Compile firmware for both halves
+#+begin_src shell
+qmk userspace-compile
+#+end_src
+The module is chosen at compile time, so =qmk.json= defines one target per half. The resulting
+=.uf2= files land in the repository root:
+- =splitkb_halcyon_elora_rev2_manzaltu_left_display.uf2= — left half, display module
+- =splitkb_halcyon_elora_rev2_manzaltu_right_trackpad.uf2= — right half, trackpad module
+*** Flash each half with its own firmware
+Double-tap the reset button above the USB-C port to enter the bootloader, then copy the matching
+=.uf2= onto the =RPI-RP2= drive that appears. Alternatively:
+#+begin_src shell
+qmk flash -kb splitkb/halcyon/elora/rev2 -km manzaltu -e HLC_TFT_DISPLAY=1 -e TARGET=splitkb_halcyon_elora_rev2_manzaltu_left_display
+qmk flash -kb splitkb/halcyon/elora/rev2 -km manzaltu -e HLC_CIRQUE_TRACKPAD=1 -e TARGET=splitkb_halcyon_elora_rev2_manzaltu_right_trackpad
+#+end_src
+
+** Updating the Halcyon module code
+#+begin_src shell
+git fetch upstream
+git merge upstream/halcyon-qmk
+#+end_src
+
+** LICENSE
+Copyright © 2026 Yoav Orot.
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this program. If not,
+see <https://www.gnu.org/licenses/>.
