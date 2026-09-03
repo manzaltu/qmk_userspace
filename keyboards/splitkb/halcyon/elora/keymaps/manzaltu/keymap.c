@@ -51,10 +51,51 @@ const double_key_combination_t combo_macros[] = {
     [MOUSE_DOWN_LEFT - SAFE_RANGE]  = {.kc1 = MS_DOWN, .kc2 = MS_LEFT},
 };
 
-// Process custom macro keys
+// Display on/off choice, in the user EEPROM word because the Halcyon idle timeout
+// overwrites the backlight's own EEPROM state. Zero (the reset default) is on.
+typedef union {
+    uint32_t raw;
+    struct {
+        bool display_off : 1;
+    };
+} user_config_t;
+
+static user_config_t user_config;
+
+// Re-apply the off choice after the Halcyon code turns the backlight back on.
+// Only the master matters, QMK mirrors its backlight state to the slave.
+static void display_apply_off(void) {
+    if (is_keyboard_master() && user_config.display_off && is_backlight_enabled()) {
+        backlight_set(0); // Cut the PWM before the EEPROM write below
+        backlight_disable();
+    }
+}
+
+static void display_toggle(void) {
+    user_config.display_off = !user_config.display_off;
+    eeconfig_update_user(user_config.raw);
+
+    if (user_config.display_off) {
+        backlight_disable();
+    } else {
+        backlight_enable();
+        if (get_backlight_level() == 0) {
+            backlight_level(BACKLIGHT_LEVELS); // Same fix-up as backlight_wakeup()
+        }
+    }
+}
+
+// Process custom keys
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    if (keycode == DISPLAY_TOGGLE) {
+        if (record->event.pressed) {
+            display_toggle();
+        }
+        return false;
+    }
+
     // Check if this is a defined macro key
-    if (keycode >= SAFE_RANGE && keycode < CUSTOM_KEYCODES_END) {
+    if (keycode >= SAFE_RANGE && keycode < SAFE_RANGE + ARRAY_SIZE(combo_macros)) {
         // Execute combo macro
         double_key_combination_t combo = combo_macros[keycode - SAFE_RANGE];
 
@@ -126,12 +167,19 @@ static void caps_word_sync_slave_handler(uint8_t in_len, const void *in_data, ui
 
 void keyboard_post_init_user(void) {
     transaction_register_rpc(USER_SYNC_CAPS_WORD, caps_word_sync_slave_handler);
+
+    // The display module init turned the backlight on
+    user_config.raw = eeconfig_read_user();
+    display_apply_off();
 }
 
 void housekeeping_task_user(void) {
     if (!is_keyboard_master()) {
         return;
     }
+
+    // After the idle timeout wakeup in halcyon.c
+    display_apply_off();
 
     static bool     synced     = false;
     static bool     last_state = false;
@@ -186,6 +234,9 @@ bool display_module_housekeeping_task_user(bool second_display) {
     if (second_display) {
         return true; // Not the status display, keep the stock behaviour
     }
+
+    // Before the first draw: the backlight is turned on when the halves connect
+    display_apply_off();
 
     if (first) {
         font           = qp_load_font_mem(font_Retron2000_27);

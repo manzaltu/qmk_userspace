@@ -12,8 +12,8 @@
 // Layer index
 enum layers { _MAIN, _SYM, _NUM, _NAV, _MOUSE };
 
-// Custom macro keys
-enum custom_keycodes { MOUSE_UP_RIGHT = SAFE_RANGE, MOUSE_UP_LEFT, MOUSE_DOWN_RIGHT, MOUSE_DOWN_LEFT, CUSTOM_KEYCODES_END };
+// Custom keycodes
+enum custom_keycodes { MOUSE_UP_RIGHT = SAFE_RANGE, MOUSE_UP_LEFT, MOUSE_DOWN_RIGHT, MOUSE_DOWN_LEFT, DISPLAY_TOGGLE };
 
 // Tap dance keys
 enum {
