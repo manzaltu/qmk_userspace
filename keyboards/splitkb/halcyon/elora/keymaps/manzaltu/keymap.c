@@ -85,8 +85,34 @@ static void display_toggle(void) {
     }
 }
 
+// State the display needs but only the master knows, since key processing runs
+// there alone. Mirrored to the slave over a split transaction.
+typedef struct {
+    uint16_t key; // Last key pressed, KC_NO before the first one
+    bool     key_held;
+    bool     caps_word;
+} display_state_t;
+
+static display_state_t display_state;
+
 // Process custom keys
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    // Remember the key for the display, apart from what the modifier row and the
+    // layer name already show. Shifted symbols such as KC_AT keep their shift, the
+    // display names them.
+    uint16_t key = keycode;
+    if (IS_QK_MODS(keycode) && QK_MODS_GET_MODS(keycode) != MOD_LSFT) {
+        key = QK_MODS_GET_BASIC_KEYCODE(keycode);
+    }
+    if (key != KC_NO && !IS_MODIFIER_KEYCODE(key) && !IS_QK_MOMENTARY(key) && key != TD(TD_NAV_MOUSE)) {
+        if (record->event.pressed) {
+            display_state.key      = key;
+            display_state.key_held = true;
+        } else if (key == display_state.key) {
+            display_state.key_held = false;
+        }
+    }
+
     if (keycode == DISPLAY_TOGGLE) {
         if (record->event.pressed) {
             display_toggle();
@@ -155,18 +181,14 @@ void td_double_hold_reset(tap_dance_state_t *state, void *user_data) {
     td_user_data->state = TD_NONE;
 }
 
-// Caps Word state, mirrored from the master to the slave half. Key processing (and
-// therefore Caps Word) only runs on the master, so the slave has to be told.
-static bool caps_word_synced = false;
-
-static void caps_word_sync_slave_handler(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
-    if (in_len == sizeof(bool)) {
-        memcpy(&caps_word_synced, in_data, sizeof(bool));
+static void display_sync_slave_handler(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
+    if (in_len == sizeof(display_state)) {
+        memcpy(&display_state, in_data, sizeof(display_state));
     }
 }
 
 void keyboard_post_init_user(void) {
-    transaction_register_rpc(USER_SYNC_CAPS_WORD, caps_word_sync_slave_handler);
+    transaction_register_rpc(USER_SYNC_DISPLAY, display_sync_slave_handler);
 
     // The display module init turned the backlight on
     user_config.raw = eeconfig_read_user();
@@ -181,16 +203,16 @@ void housekeeping_task_user(void) {
     // After the idle timeout wakeup in halcyon.c
     display_apply_off();
 
-    static bool     synced     = false;
-    static bool     last_state = false;
-    static uint32_t last_try   = 0;
-    bool            state      = is_caps_word_on();
+    static display_state_t last_sent;
+    static bool            synced   = false;
+    static uint32_t        last_try = 0;
 
-    if ((!synced || state != last_state) && timer_elapsed32(last_try) > 50) {
+    display_state.caps_word = is_caps_word_on();
+    if ((!synced || memcmp(&display_state, &last_sent, sizeof(display_state)) != 0) && timer_elapsed32(last_try) > 50) {
         last_try = timer_read32();
-        if (transaction_rpc_send(USER_SYNC_CAPS_WORD, sizeof(state), &state)) {
-            last_state = state;
-            synced     = true;
+        if (transaction_rpc_send(USER_SYNC_DISPLAY, sizeof(display_state), &display_state)) {
+            last_sent = display_state;
+            synced    = true;
         }
     }
 }
@@ -200,11 +222,13 @@ void housekeeping_task_user(void) {
 #    include "hlc_tft_display/graphics/fonts/Retron2000-27.qff.h"
 #    include "hlc_tft_display/graphics/fonts/Retron2000-underline-27.qff.h"
 
-// Caps Word state valid on either half
-static bool caps_word_state(void) {
-    return is_keyboard_master() ? is_caps_word_on() : caps_word_synced;
-}
-
+// Key line names: punctuation as the character itself, short names for the custom keys
+KEYCODE_STRING_NAMES_USER(
+    {KC_GRV, "`"}, {KC_MINS, "-"}, {KC_EQL, "="}, {KC_LBRC, "["}, {KC_RBRC, "]"}, {KC_BSLS, "\\"}, {KC_SCLN, ";"}, {KC_QUOT, "'"}, {KC_COMM, ","}, {KC_DOT, "."}, {KC_SLSH, "/"},
+    {KC_TILD, "~"}, {KC_EXLM, "!"}, {KC_AT, "@"}, {KC_HASH, "#"}, {KC_DLR, "$"}, {KC_PERC, "%"}, {KC_CIRC, "^"}, {KC_AMPR, "&"}, {KC_ASTR, "*"}, {KC_LPRN, "("}, {KC_RPRN, ")"},
+    {KC_UNDS, "_"}, {KC_PLUS, "+"}, {KC_LCBR, "{"}, {KC_RCBR, "}"}, {KC_PIPE, "|"}, {KC_COLN, ":"}, {KC_DQUO, "\""}, {KC_LT, "<"}, {KC_GT, ">"}, {KC_QUES, "?"},
+    {MOUSE_UP_RIGHT, "MS_UR"}, {MOUSE_UP_LEFT, "MS_UL"}, {MOUSE_DOWN_RIGHT, "MS_DR"}, {MOUSE_DOWN_LEFT, "MS_DL"}, {DISPLAY_TOGGLE, "DISP"},
+);
 
 typedef struct {
     const char *name;
@@ -227,15 +251,21 @@ typedef struct {
 #define HSV_MOD_OFF(hue) hue, 104, 77
 #define HSV_MOD_ON(hue) hue, 191, 245
 
+// Key line in white, dim once released
+#define HSV_KEY_OFF 0, 0, 77
+#define HSV_KEY_ON 0, 0, 245
+
 static const mod_gfx_t mod_gfx[] = {
     {"C", MOD_MASK_CTRL, 0}, {"M", MOD_MASK_ALT, 85}, {"s", MOD_MASK_GUI, 142}, {"S", MOD_MASK_SHIFT, 202}, // Red, green, blue, magenta
 };
 
-// Replaces the stock screen: layer name, modifier row and a Caps Word indicator,
-// without the Num/Scroll lock lines. Returning false skips the stock drawing.
+// Replaces the stock screen: layer name, last key, modifier row and a Caps Word
+// indicator, without the Num/Scroll lock lines. Returning false skips the stock drawing.
 bool display_module_housekeeping_task_user(bool second_display) {
     static bool                  first      = true;
     static layer_state_t         last_layer = 0;
+    static uint16_t              last_key   = KC_NO;
+    static bool                  last_held  = false;
     static uint8_t               last_mods  = 0;
     static bool                  last_caps  = false;
     static painter_font_handle_t font, font_underline;
@@ -265,7 +295,40 @@ bool display_module_housekeeping_task_user(bool second_display) {
         dirty      = true;
     }
 
-    uint8_t mods = get_mods() | get_weak_mods() | get_oneshot_mods();
+    if (first || display_state.key != last_key || display_state.key_held != last_held) {
+        int16_t y = LCD_HEIGHT - 3 * font->line_height - 15;
+
+        qp_rect(lcd_surface, 5, y, LCD_WIDTH - 1, y + font->line_height - 1, HSV_BLACK, true);
+        if (display_state.key != KC_NO) {
+            const char *name = get_keycode_string(display_state.key);
+            char        label[12];
+
+            if (strncmp(name, "KC_", 3) == 0) {
+                name += 3; // Plain keys read better without the prefix
+            }
+            strncpy(label, name, sizeof(label) - 1);
+            label[sizeof(label) - 1] = '\0';
+
+            size_t len = strlen(label);
+            while (len > 0 && qp_textwidth(font, label) > LCD_WIDTH - 10) {
+                label[--len] = '\0'; // Clip what does not fit on the line
+            }
+
+            if (display_state.key_held) {
+                qp_drawtext_recolor(lcd_surface, 5, y, font_underline, label, HSV_KEY_ON, HSV_BLACK);
+            } else {
+                qp_drawtext_recolor(lcd_surface, 5, y, font, label, HSV_KEY_OFF, HSV_BLACK);
+            }
+        }
+
+        last_key  = display_state.key;
+        last_held = display_state.key_held;
+        dirty     = true;
+    }
+
+    // Real and one-shot modifiers only: weak ones are what QMK adds for a keycode
+    // such as KC_AT, and those should not light up
+    uint8_t mods = get_mods() | get_oneshot_mods();
     if (first || mods != last_mods) {
         int16_t y    = LCD_HEIGHT - 2 * font->line_height - 10;
         int16_t step = (LCD_WIDTH - 10) / ARRAY_SIZE(mod_gfx);
@@ -284,7 +347,7 @@ bool display_module_housekeeping_task_user(bool second_display) {
         dirty     = true;
     }
 
-    bool caps = caps_word_state();
+    bool caps = display_state.caps_word;
     if (first || caps != last_caps) {
         int16_t y = LCD_HEIGHT - font->line_height - 5;
         if (caps) {

@@ -7,3 +7,8 @@ USER_NAME := halcyon_modules
 ENCODER_MAP_ENABLE = yes
 TAP_DANCE_ENABLE = yes
 CAPS_WORD_ENABLE = yes
+
+# The display shows the last key by name
+ifdef HLC_TFT_DISPLAY
+    KEYCODE_STRING_ENABLE = yes
+endif

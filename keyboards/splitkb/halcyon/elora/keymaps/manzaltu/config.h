@@ -5,6 +5,6 @@
 
 #define TAPPING_TERM 200
 
-// Split transaction used to mirror the Caps Word state to the other half, so the
-// display can show it even when it sits on the slave side
-#define SPLIT_TRANSACTION_IDS_USER USER_SYNC_CAPS_WORD
+// Split transaction that mirrors the display state (Caps Word, last key) to the
+// other half, so the display can show it even when it sits on the slave side
+#define SPLIT_TRANSACTION_IDS_USER USER_SYNC_DISPLAY
