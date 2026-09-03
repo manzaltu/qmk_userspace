@@ -199,12 +199,6 @@ void housekeeping_task_user(void) {
 #    include "hlc_tft_display/hlc_tft_display.h"
 #    include "hlc_tft_display/graphics/fonts/Retron2000-27.qff.h"
 #    include "hlc_tft_display/graphics/fonts/Retron2000-underline-27.qff.h"
-#    include "hlc_tft_display/graphics/numbers/0.qgf.h"
-#    include "hlc_tft_display/graphics/numbers/1.qgf.h"
-#    include "hlc_tft_display/graphics/numbers/2.qgf.h"
-#    include "hlc_tft_display/graphics/numbers/3.qgf.h"
-#    include "hlc_tft_display/graphics/numbers/4.qgf.h"
-#    include "hlc_tft_display/graphics/numbers/undef.qgf.h"
 
 // Caps Word state valid on either half
 static bool caps_word_state(void) {
@@ -213,16 +207,16 @@ static bool caps_word_state(void) {
 
 
 typedef struct {
-    const uint8_t *image;
-    uint8_t        h, s, v;
+    const char *name;
+    uint8_t     h, s, v;
 } layer_gfx_t;
 
-// Layer number images and colours, reused from the stock display module
+// Layer names and the stock display module's layer colours
 static const layer_gfx_t layer_gfx[] = {
-    [_MAIN] = {gfx_0, HSV_LAYER_0}, [_SYM] = {gfx_1, HSV_LAYER_1}, [_NUM] = {gfx_2, HSV_LAYER_2}, [_NAV] = {gfx_3, HSV_LAYER_3}, [_MOUSE] = {gfx_4, HSV_LAYER_4},
+    [_MAIN] = {"MAIN", HSV_LAYER_0}, [_SYM] = {"SYM", HSV_LAYER_1}, [_NUM] = {"NUM", HSV_LAYER_2}, [_NAV] = {"NAV", HSV_LAYER_3}, [_MOUSE] = {"MOUSE", HSV_LAYER_4},
 };
 
-// Replaces the stock screen: layer number plus a Caps Word indicator, without the
+// Replaces the stock screen: layer name plus a Caps Word indicator, without the
 // Num/Scroll lock lines. Returning false skips the stock drawing.
 bool display_module_housekeeping_task_user(bool second_display) {
     static bool                  first      = true;
@@ -245,11 +239,11 @@ bool display_module_housekeeping_task_user(bool second_display) {
 
     if (first || layer_state != last_layer) {
         uint8_t     layer = get_highest_layer(layer_state | default_layer_state);
-        layer_gfx_t gfx   = layer < ARRAY_SIZE(layer_gfx) ? layer_gfx[layer] : (layer_gfx_t){gfx_undef, HSV_LAYER_UNDEF};
+        layer_gfx_t gfx   = layer < ARRAY_SIZE(layer_gfx) ? layer_gfx[layer] : (layer_gfx_t){"?", HSV_LAYER_UNDEF};
 
-        painter_image_handle_t image = qp_load_image_mem(gfx.image);
-        qp_drawimage_recolor(lcd_surface, 5, 5, image, gfx.h, gfx.s, gfx.v, HSV_BLACK);
-        qp_close_image(image);
+        // Names differ in width, so blank the line before drawing the new one
+        qp_rect(lcd_surface, 5, 5, LCD_WIDTH - 1, 5 + font->line_height - 1, HSV_BLACK, true);
+        qp_drawtext_recolor(lcd_surface, 5, 5, font, gfx.name, gfx.h, gfx.s, gfx.v, HSV_BLACK);
 
         last_layer = layer_state;
         dirty      = true;
