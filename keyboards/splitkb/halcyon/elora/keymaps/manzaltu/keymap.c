@@ -216,11 +216,27 @@ static const layer_gfx_t layer_gfx[] = {
     [_MAIN] = {"MAIN", HSV_LAYER_0}, [_SYM] = {"SYM", HSV_LAYER_1}, [_NUM] = {"NUM", HSV_LAYER_2}, [_NAV] = {"NAV", HSV_LAYER_3}, [_MOUSE] = {"MOUSE", HSV_LAYER_4},
 };
 
-// Replaces the stock screen: layer name plus a Caps Word indicator, without the
-// Num/Scroll lock lines. Returning false skips the stock drawing.
+typedef struct {
+    const char *label;
+    uint8_t     mask;
+    uint8_t     hue;
+} mod_gfx_t;
+
+// Modifier row in Emacs notation, either side counts. Dim when released, bright and
+// underlined when held, with the same saturation and value as the stock Caps colours.
+#define HSV_MOD_OFF(hue) hue, 104, 77
+#define HSV_MOD_ON(hue) hue, 191, 245
+
+static const mod_gfx_t mod_gfx[] = {
+    {"C", MOD_MASK_CTRL, 0}, {"M", MOD_MASK_ALT, 85}, {"s", MOD_MASK_GUI, 142}, {"S", MOD_MASK_SHIFT, 202}, // Red, green, blue, magenta
+};
+
+// Replaces the stock screen: layer name, modifier row and a Caps Word indicator,
+// without the Num/Scroll lock lines. Returning false skips the stock drawing.
 bool display_module_housekeeping_task_user(bool second_display) {
     static bool                  first      = true;
     static layer_state_t         last_layer = 0;
+    static uint8_t               last_mods  = 0;
     static bool                  last_caps  = false;
     static painter_font_handle_t font, font_underline;
     bool                         dirty = false;
@@ -247,6 +263,25 @@ bool display_module_housekeeping_task_user(bool second_display) {
 
         last_layer = layer_state;
         dirty      = true;
+    }
+
+    uint8_t mods = get_mods() | get_weak_mods() | get_oneshot_mods();
+    if (first || mods != last_mods) {
+        int16_t y    = LCD_HEIGHT - 2 * font->line_height - 10;
+        int16_t step = (LCD_WIDTH - 10) / ARRAY_SIZE(mod_gfx);
+
+        for (uint8_t i = 0; i < ARRAY_SIZE(mod_gfx); i++) {
+            const mod_gfx_t *m = &mod_gfx[i];
+            int16_t          x = 5 + i * step;
+            if (mods & m->mask) {
+                qp_drawtext_recolor(lcd_surface, x, y, font_underline, m->label, HSV_MOD_ON(m->hue), HSV_BLACK);
+            } else {
+                qp_drawtext_recolor(lcd_surface, x, y, font, m->label, HSV_MOD_OFF(m->hue), HSV_BLACK);
+            }
+        }
+
+        last_mods = mods;
+        dirty     = true;
     }
 
     bool caps = caps_word_state();
